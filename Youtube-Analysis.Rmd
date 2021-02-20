@@ -1,0 +1,712 @@
+```{R}
+# data manipulation
+library(dplyr)
+library(readr)
+library(reshape2)
+# string and date formatting
+library(stringr)
+library(lubridate)
+# plotting
+library(ggplot2)
+library(ggthemes)
+library(grid)
+library(scales)
+library(purrr)
+library(jsonlite)
+library(tidyr)
+
+# Multiple plot function
+#
+# ggplot objects can be passed in ..., or to plotlist (as a list of ggplot objects)
+# - cols:   Number of columns in layout
+# - layout: A matrix specifying the layout. If present, 'cols' is ignored.
+#
+# If the layout is something like matrix(c(1,2,3,3), nrow=2, byrow=TRUE),
+# then plot 1 will go in the upper left, 2 will go in the upper right, and
+# 3 will go all the way across the bottom.
+#
+multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
+  library(grid)
+
+  # Make a list from the ... arguments and plotlist
+  plots <- c(list(...), plotlist)
+
+  numPlots = length(plots)
+
+  # If layout is NULL, then use 'cols' to determine layout
+  if (is.null(layout)) {
+    # Make the panel
+    # ncol: Number of columns of plots
+    # nrow: Number of rows needed, calculated from # of cols
+    layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
+                    ncol = cols, nrow = ceiling(numPlots/cols))
+  }
+
+ if (numPlots==1) {
+    print(plots[[1]])
+
+  } else {
+    # Set up the page
+    grid.newpage()
+    pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
+
+    # Make each plot, in the correct location
+    for (i in 1:numPlots) {
+      # Get the i,j matrix positions of the regions that contain this subplot
+      matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
+
+      print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row,
+                                      layout.pos.col = matchidx$col))
+    }
+  }
+}
+
+gg_color_hue <- function(n) {
+  hues = seq(15, 375, length = n + 1)
+  hcl(h = hues, l = 65, c = 100)[1:n]
+}
+
+# function for adding stdder
+stdder <- function(prop, n){
+  return(1.64*sqrt(prop/(1-prop)/n))
+}
+
+# favorite colors
+coral="#ff7f50"
+
+```
+
+```{R}
+watches = fromJSON('data/Takeout_20201227//YouTube and YouTube Music/history/watch-history.json')
+
+
+
+watches = watches %>%
+  mutate(id = row_number()) %>%
+  select(-header, -titleUrl, -titleUrl)
+```
+
+
+
+### Extract name from nested column
+
+```{R}
+watches = watches %>%
+  left_join(
+    watches %>%
+    select(id, subtitles) %>%
+    mutate(l = map_if(subtitles, is.null, ~ tibble())) %>%
+    unnest(l) %>%
+    select(id, name)
+  )
+# extracted name from subtitles - don't need it anymore
+watches = watches %>%
+  select(-subtitles)
+# midnight (0) after 11pm
+watches = watches %>%
+  mutate(hour_of_day = hour(time))
+watches$hour_of_day = factor(watches$hour_of_day, levels = c(seq(1,23), 0))
+
+```
+
+### Add date time properties
+
+```{R}
+watches = watches %>%
+  mutate(time = ymd_hms(time), tz = "UTC") %>%
+  mutate(time = with_tz(time, "America/Montreal")) %>%
+  mutate(date = date(time)) %>%
+  mutate(day_of_week = wday(date), 
+         day_of_week_name = wday(date, label = T),
+         hour_of_day = hour(time),
+         week = floor_date(date, 'weeks'), 
+         month = floor_date(date, 'months')) %>%
+  mutate(weekend = day_of_week_name %in% c("Sat", "Sun"))
+```
+
+
+---
+
+## Things to look into/show
+
+
+- Increase in watches during COVID
+- Change in time of watch during COVID
+- Streaks in watches
+  - Top channels, show that would binge watch movie clips. Show a stat of how many movies I watched in clips
+
+Then
+
+- Show resolution
+
+
+---
+
+### Show behavior
+
+
+
+
+
+
+
+
+
+
+```{R}
+tibble(week=seq.Date(date("2019-07-14"), date("2020-12-13"), by = 7)) %>%
+  left_join(
+    watches %>%
+      count(week)
+  )%>%
+  mutate(n = ifelse(is.na(n), 0, n)) %>%
+  ggplot(aes(x = week, y = n)) + 
+  geom_line() +
+  geom_point()+
+  labs(title = "Watches per week")  +
+  geom_vline(xintercept = date("2020-04-21"), color="red", linetype="dashed") +
+  theme_hc()
+```
+```{R}
+tibble(week=seq.Date(date("2019-07-14"), date("2020-12-13"), by = 7)) %>%
+  left_join(
+    watches %>%
+      count(week)
+  )%>%
+  mutate(n = ifelse(is.na(n), 0, n)) %>%
+  ggplot(aes(x = week, y = n)) + 
+  geom_line() +
+  geom_point()+
+  labs(title = "YouTube videos watched per week")  +
+ # geom_vline(xintercept = date("2020-04-21"), color="red", linetype="dashed") +
+  theme_hc() +
+  theme(axis.title.y = element_blank()) +
+  scale_x_date(breaks = c(date("2019-09-01"), date("2019-12-01"), date("2020-03-01"),date("2020-06-01"),date("2020-09-01"),date("2020-12-01")))
+
+ggsave("images/watches_per_orig.png", height = 4, width =6 )
+```
+
+Zoomed in view:
+
+
+```{R}
+tibble(week=seq.Date(date("2019-07-14"), date("2020-12-13"), by = 7)) %>%
+  left_join(
+    watches %>%
+      count(week)
+  )%>%
+  mutate(n = ifelse(is.na(n), 0, n)) %>%
+  ggplot(aes(x = week, y = n)) + 
+  geom_line() +
+  geom_point()+
+  labs(title = "Watches per week",
+       subtitle="Usage after intervention zoomed below")  +
+  theme_hc() +
+  ggforce::facet_zoom(xy=between(week, date("2020-05-07"), date("2020-12-21")),
+                      show.area =F,zoom.size = .5, horizontal = F) +
+  theme(axis.title.y = element_blank()) +
+  scale_x_date(breaks = c(date("2019-09-01"), date("2019-12-01"), date("2020-03-01"),date("2020-06-01"),date("2020-09-01"),date("2020-12-01")))
+
+ggsave("images/watches_per_week_zoom.png", height = 5, width = 7)
+```
+
+##### Focusing on COVID increase
+
+```{R}
+tibble(week=seq.Date(date("2019-07-14"), date("2020-12-13"), by = 7)) %>%
+  left_join(
+    watches %>%
+      count(week)
+  )%>%
+  mutate(n = ifelse(is.na(n), 0, n)) %>%
+  filter(week <= date("2020-04-21")) %>%
+  ggplot(aes(x = week, y = n)) + 
+  geom_line(alpha=.8,color="grey10") +
+  geom_point()+
+  labs(title = "Watches per week",
+       subtitle="Start of work from home in red")  +
+  theme_hc() +
+  theme(axis.title.y = element_blank()) + 
+  geom_vline(xintercept = date("2020-03-01"), linetype="dashed", color="red") + 
+  theme(legend.position = "none") 
+
+ggsave("images/watches_per_week.png", height =4, width = 6)
+```
+
+
+### Show weekly behavior because of COVID
+
+```{R}
+watches %>%
+  filter(week<=date("2020-04-21")) %>%
+  count(hour_of_day) %>%
+  ggplot(aes(x = hour_of_day, y = n)) + 
+  geom_col()
+```
+
+```{R}
+watches %>%
+  filter(week<=date("2020-04-21")) %>%
+  count(month,hour_of_day) %>%
+  ggplot(aes(x = hour_of_day, y = n)) + 
+  geom_col() + 
+  facet_wrap(~`month`, scales="free_y")
+```
+
+
+
+
+```{R}
+watches %>%
+  filter(date < date("2020-03-01")) %>%
+  count(hour_of_day) %>%
+  ggplot(aes(x = hour_of_day, y = n)) + 
+  geom_col()
+```
+
+```{R}
+watches %>%
+  filter(date < date("2020-03-01")) %>%
+  mutate(weekend = ifelse(weekend, "Weekend", "Weekday")) %>% 
+  count(weekend, hour_of_day) %>%
+  mutate(prop = n/sum(n)) %>%
+  mutate(hour_of_day = ifelse(hour_of_day == 0, 24,hour_of_day)) %>%
+  ggplot(aes(x = hour_of_day, y = prop)) + 
+  geom_col() + 
+  facet_wrap(~weekend, scales='free_y') +
+  theme_hc()  +
+  theme(axis.title.y=element_blank(),
+        axis.text.y = element_blank(), 
+        axis.ticks.y = element_blank()) + 
+  scale_x_continuous(breaks = c(6, 12, 18, 24), 
+                     labels= c(6, 12, 18, 0)) +
+  xlab("Hour of day") + 
+  labs(title="Distribution of watches, by hour of day", 
+       subtitle="July 2019 - February 2020, Split by weekdays and weekends")
+
+ggsave("images/weekday_watches_dist_weekend.png", height = 3.4 , width = 5.5)
+  
+```
+
+
+```{R}
+t = watches %>%
+  mutate(month_group = case_when(
+    month < date('2020-03-01')~ "July 2019 - Feb 2020",
+    month < date('2020-04-01') ~ "March 2020", 
+    T ~ "April 2020"
+  )) %>%
+  count(weekend,month_group, hour_of_day) %>%
+  group_by(weekend,month_group) %>%
+  mutate(prop = n/sum(n)) %>%
+    filter(!(hour_of_day  %in% c(1,2,3,4,5,6)))%>%
+  filter(!weekend)%>%
+  mutate(hour_of_day = ifelse(hour_of_day == 0, 24,hour_of_day)) 
+
+t$month_group = factor(t$month_group, levels =c("July 2019 - Feb 2020", "March 2020", "April 2020"))
+
+
+t %>%
+  ggplot(aes(x = hour_of_day, y = prop,fill=month_group)) + 
+  geom_col(position="dodge")+ 
+  facet_wrap(~month_group,ncol = 1) +
+  theme_hc() +
+  theme(axis.title.y = element_blank(), axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        legend.position = "none")+
+  labs(title="Split of watch count by hour of day",
+       subtitle="Limited to weekdays, normalized to monthly totals") +
+  scale_x_continuous(breaks=seq(1,24)) + 
+  
+  xlab("Hour of day")
+  
+
+ggsave("images/weekday_watches_by_hour_split_orig.png", height=4, width=5)
+```
+
+```{R}
+t = watches %>%
+  mutate(month_group = case_when(
+    month < date('2020-03-01')~ "July 2019 - Feb 2020",
+    month < date('2020-04-01') ~ "March 2020", 
+    T ~ "April 2020"
+  )) %>%
+  count(weekend,month_group, hour_of_day) %>%
+  group_by(weekend,month_group) %>%
+  mutate(prop = n/sum(n)) %>%
+    filter(!(hour_of_day  %in% c(1,2,3,4,5,6))) 
+
+t %>%
+  filter(month_group !="July 2019 - Feb 2020") %>%
+  left_join(t %>%
+              filter(month_group == "July 2019 - Feb 2020") %>%
+              rename(baseline=prop) %>%
+              ungroup() %>%
+              select(weekend,hour_of_day, baseline)) %>%
+  mutate(perc_over_baseline=prop/(ifelse(is.na(baseline), 1, baseline))-1) %>%
+  mutate(hour_of_day = ifelse(hour_of_day == 0, 24,hour_of_day)) %>%
+  arrange(month_group, hour_of_day) %>%
+  ggplot(aes(x= hour_of_day, y = perc_over_baseline, color=month_group, group=month_group)) + 
+  geom_path() + 
+  geom_hline(yintercept = 0) + 
+  theme_hc() +
+  facet_wrap(~weekend)
+```
+
+#### Story: 
+
+- Before covid, would mainly watch in the mornings and at nights on weekdays, and all of the place on weekends
+- Then when covid started and habits started to break down, I started doing two things that aren't good during the work week: 
+  - watching during lunch (in March, this started)
+  - Using the time I usually spent commuting (8:00-9:00am) for YouTube
+  - started watching every once in a while during work day
+  
+
+
+### Notes
+
+- In March, I was particularly bad about watching right before bed
+- Suprisingly, it looks like I was pretty consistently watching in the hours of the day in January, which is pretty surprising as I was at work in January
+  - Worth splitting between weekends and weekdays
+- April I was much more likely to watch between 5pm and 7pm, or between 8am and 9am. This is likely because I'm WFH, and don't have to commute.
+
+
+---
+
+### How deep are the rabbit holes? Sessionizing watches: 
+
+```{R}
+watches = watches %>%
+  arrange(time) %>%
+  mutate(lagged_time = lag(time)) %>%
+  mutate(seconds_since_last_start = as.integer(time-lag(time))) %>%
+  # new session if time since previous watch exceeds 30 minutes
+  mutate(new_session = ifelse(is.na(seconds_since_last_start) | seconds_since_last_start > 60*30, 1, 0)) %>%
+  mutate(session_number = cumsum(new_session))
+```
+
+
+Dist in number of videos per session
+```{R}
+watches %>%
+  
+  group_by(session_number) %>%
+  #filter(date < date("2020-03-01")) %>%
+  summarize(n_watches=n()) %>%
+  filter(n_watches <= 15) %>%
+  filter(n_watches > 0) %>%
+  count(n_watches) %>%
+  mutate(prop = n/sum(n))%>%
+  ggplot(aes(x=n_watches, y = prop)) + 
+  geom_col() + 
+  theme_hc() + 
+  theme(axis.title.y = element_blank()) +
+  xlab("Number of watches per session") +
+  labs(title="Distribution in watches per session")  +
+  scale_x_continuous(breaks = c(1,5,10,15), labels=c(1,5,10,15)) + 
+  scale_y_continuous(labels=function(x) percent(x,1))
+
+ggsave("images/number_of_watches_per_session_dist.png", height = 3, width = 5)
+```
+
+
+```{R}
+watches %>%
+  mutate(month_group = case_when(
+    month < date('2020-03-01')~ "July 2019 - Feb 2020",
+    month < date('2020-04-01') ~ "March 2020", 
+    T ~ "April 2020")) %>%
+  group_by(session_number,month_group) %>%
+  summarize(n_watches=n()) %>%
+  count(n_watches,month_group) %>%
+  group_by(month_group) %>%
+  mutate(prop=n/sum(n)) %>%
+  ggplot(aes(x=n_watches, y = prop, fill=month_group)) + 
+  geom_col() + 
+  facet_wrap(~month_group, ncol=1)
+```
+
+```{R}
+t = watches %>%
+  mutate(month_group = case_when(
+    month < date('2020-03-01')~ "July 2019 - Feb 2020",
+    month < date('2020-04-01') ~ "March 2020", 
+    T ~ "April 2020")) %>%
+  group_by(session_number,month_group, weekend) %>%
+  summarize(n_watches=n()) %>%
+  count(n_watches,month_group, weekend) %>%
+  group_by(month_group, weekend) %>%
+  mutate(prop=n/sum(n)) 
+
+t$month_group = factor(t$month_group, levels =c("July 2019 - Feb 2020", "March 2020", "April 2020"))
+
+
+t %>%
+  ggplot(aes(x=n_watches, y = prop, fill=month_group)) + 
+  geom_col() + 
+  facet_grid(month_group~weekend) +
+  theme_hc() + 
+  theme(legend.position = '')
+```
+
+```{R}
+t = watches %>%
+  mutate(month_group = case_when(
+    month < date('2020-03-01')~ "July 2019 - Feb 2020",
+    month < date('2020-04-01') ~ "March 2020", 
+    T ~ "April 2020")) %>%
+  group_by(session_number,month_group) %>%
+  summarize(n_watches=n()) %>%
+  count(n_watches,month_group) %>%
+  group_by(month_group) %>%
+  mutate(prop=n/sum(n)) 
+
+t$month_group = factor(t$month_group, levels =c("July 2019 - Feb 2020", "March 2020", "April 2020"))
+
+
+t %>%
+  ggplot(aes(x=n_watches, y = prop, fill=month_group)) + 
+  geom_col() + 
+  facet_wrap(~month_group) +
+  theme_hc() + 
+  theme(legend.position = '')
+```
+
+```{R}
+t = watches %>%
+  mutate(month_group = case_when(
+    month < date('2020-03-01')~ "July 2019 -\nFeb 2020",
+    month < date('2020-04-01') ~ "March 2020", 
+    T ~ "April 2020")) %>%
+  group_by(session_number,month_group) %>%
+  summarize(n_watches=n()) 
+
+t$month_group = factor(t$month_group, levels =rev(c("July 2019 -\nFeb 2020", "March 2020", "April 2020")))
+
+
+t %>%
+  filter(n_watches < 15) %>%
+  ggplot(aes(y = n_watches, x = month_group, fill = month_group)) + 
+  geom_boxplot( show.legend = F)  + 
+  coord_flip() + 
+  theme_hc() +
+  theme(axis.title.y = element_blank()) +
+  labs(fill="Month") + 
+  ylab("Number of watches per session (log scale)") +
+  labs(title="Number of watches per session, by month")  +
+  scale_fill_manual(values = rev(gg_color_hue(3))) +
+  scale_y_log10()
+
+ggsave("images/number_of_watches_per_session_boxes.png", height = 3.5, width = 5)
+```
+
+```{R}
+t %>%
+  ggplot(aes(x = n_watches,y = month_group, fill=month_group)) + 
+  ggridges::geom_density_ridges(alpha = .5) +
+  scale_x_log10()
+
+```
+
+
+```{R}
+t = watches %>%
+  filter(hour_of_day<= 8 || hour_of_day >= 18) %>%
+  mutate(month_group = case_when(
+    month < date('2020-03-01')~ "July 2019 - Feb 2020",
+    month < date('2020-04-01') ~ "March 2020", 
+    T ~ "April 2020")) %>%
+  group_by(session_number,month_group, weekend) %>%
+  summarize(n_watches=n()) %>%
+  count(n_watches,month_group, weekend) %>%
+  group_by(month_group, weekend) %>%
+  mutate(prop=n/sum(n)) 
+
+t$month_group = factor(t$month_group, levels =c("July 2019 - Feb 2020", "March 2020", "April 2020"))
+
+
+t %>%
+  ggplot(aes(x=n_watches, y = prop, fill=month_group)) + 
+  geom_col() + 
+  facet_grid(month_group~weekend) +
+  theme_hc() + 
+  theme(legend.position = '')
+```
+
+```{R}
+watches %>%
+  filter(date< date("2020-03-01") ) %>%
+  group_by(month, session_number)  %>%
+  summarize(n=n()) %>%
+  mutate(n_videos_in_session = case_when(
+    n == 1 ~ "1 Watch", 
+    n <= 3 ~ "2-3 Watches", 
+    n <= 5 ~ "4-5 Watches",
+    T ~ "6+ Watches"
+  )) %>%
+  ungroup() %>%
+  count(month, n_videos_in_session)  %>%
+  group_by(month) %>%
+  mutate(prop=n/sum(n)) %>%
+  ggplot(aes(x = month, fill = n_videos_in_session, y = prop)) + 
+  geom_area()
+```
+
+```{R}
+watches %>%
+  filter(date< date("2020-05-01")) %>%
+  group_by(month, session_number)  %>%
+  summarize(n=n()) %>%
+  mutate(n_videos_in_session = case_when(
+    n == 1 ~ "1 Watch", 
+    n <= 3 ~ "2-3 Watches", 
+    T ~ "4+ Watches"
+  )) %>%
+  ungroup() %>%
+  count(month, n_videos_in_session)  %>%
+  group_by(month) %>%
+  mutate(prop=n/sum(n)) %>%
+  ggplot(aes(x = month, fill = n_videos_in_session, y = prop)) + 
+  geom_area()
+```
+
+```{R}
+watches %>%
+    filter(date< date("2020-05-01")) %>%
+  count(session_number, month, date) %>%
+  count(month,date) %>%
+  group_by(month) %>%
+  summarize(avg = mean(n), sd= sd(n), n=n()) %>%
+  mutate(ymin=avg-sd/sqrt(n), ymax=avg+sd/sqrt(n)) %>%
+ # mutate(weekend = ifelse(weekend, "Weekend", "Weekday")) %>%
+  ggplot(aes(x= month, y =avg, ymin=ymin, ymax=ymax)) +
+  geom_vline(xintercept = date("2020-03-01"), linetype="dashed", color="red") + 
+  geom_step(alpha=.8, linetype=1, color="grey50") +
+  geom_pointrange() + 
+  #facet_wrap(~weekend, ncol=2, scales="free_y") +
+  theme_hc() + 
+  labs(title = "Number of daily sessions, by month",
+       subtitle="Start of work from home in red") +
+  theme(axis.title.y = element_blank()) + 
+  scale_y_continuous(breaks = c(1, 2, 3, 4, 5))
+
+ggsave("images/sessions_by_month.png", height = 3, width = 5)
+  
+```
+
+
+```{R}
+watches %>%
+    filter(date< date("2020-05-01")) %>%
+  count(session_number, month, date, weekend) %>%
+  count(month,date, weekend) %>%
+  group_by(month, weekend) %>%
+  summarize(avg = mean(n), sd= sd(n), n=n()) %>%
+  mutate(ymin=avg-sd/sqrt(n), ymax=avg+sd/sqrt(n)) %>%
+  mutate(weekend = ifelse(weekend, "Weekend", "Weekday")) %>%
+  ggplot(aes(x= month, y =avg, ymin=ymin, ymax=ymax)) +
+  geom_vline(xintercept = date("2020-03-01"), linetype="dashed", color="red") + 
+  geom_step(alpha=.8, linetype=1, color="grey50") +
+  geom_pointrange() + 
+  facet_wrap(~weekend, ncol=2, scales="free_y") +
+  theme_hc() + 
+  labs(title = "Number of daily sessions, by month",
+       subtitle="Split by weekdays and weekends. Start of work from home in red") +
+  theme(axis.title.y = element_blank())
+  
+```
+
+
+#### Story: 
+
+Increased watch time isn't because I dove deeper each time, it's that I had more sessions. 
+Show that I have a tendency for rabbit holes, but that this was a more nefarious problem - increased number of sessions, which increases the total cost as it's hard to re-focus.
+
+
+
+```{R}
+watches %>%
+  filter(date< date("2020-05-01")) %>%
+  group_by(month, session_number)  %>%
+  summarize(n=n()) %>%
+  mutate(n_videos_in_session = case_when(
+    n == 1 ~ "1 Watch", 
+    n <= 3 ~ "2-3 Watches", 
+    n <= 5 ~ "4-5 Watches",
+    T ~ "6+ Watches"
+  )) %>%
+  ungroup() %>%
+  count(month, n_videos_in_session)  %>%
+  group_by(month) %>%
+  mutate(prop=n/sum(n)) %>%
+  ggplot(aes(x = month, fill = n_videos_in_session, y = prop)) + 
+  geom_area()
+```
+
+
+```{R}
+t = watches %>%
+  count(name, sort = T)  %>%
+  mutate(channel_rank = row_number()) %>%
+  filter(!is.na(name)) %>%
+  mutate(name_and_rank = ifelse(channel_rank <= 10, 
+                                paste(channel_rank, ": ", name, sep=""),
+                                NA)) 
+
+
+t %>%
+  ggplot(aes(x =  channel_rank, y = n, fill = name_and_rank)) + 
+  geom_col(show.legend = F) + 
+  geom_area(alpha=.5, fill="grey10") +
+  ggrepel::geom_label_repel(data=t %>% filter(channel_rank <= 10),
+                            aes(x=channel_rank, label=name_and_rank),
+                            show.legend = F,
+                            force=10,
+                            nudge_x = 10
+                            
+    
+  )
+```
+
+```{R}
+watches %>%
+  filter(between(date, date('2020-03-01') , date('2020-04-21') )) %>%
+  group_by(session_number) %>%
+  mutate(n = n()) %>%
+  filter(n >= 5) %>%
+  ungroup() %>%
+  count(name, sort=T) %>%
+  mutate(index= row_number())  %>%
+  ggplot(aes(x = index, y = n)) + 
+  geom_col() +
+  
+```
+
+
+```{R}
+watches %>%
+  filter(date<=date('2020-04-21'))%>%
+  count(month, name) %>%
+  inner_join(watches %>% filter(date<=date('2020-04-21')) %>% count(name, sort=T) %>%
+               head(10) %>%
+               filter(!is.na(name)) %>%
+               select(name)) %>%
+  ggplot(aes(x = month, y = n, fill=name)) + 
+  geom_col()
+  
+  
+```
+
+```{R}
+watches %>%
+  filter(between(date, date('2020-04-01'), date('2020-04-21'))) %>%
+    count(name, sorted=T)
+    
+```
+
+
+
+
+
+
+
